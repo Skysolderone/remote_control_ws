@@ -1,6 +1,8 @@
 // 渲染进程脚本：负责 UI 和与 preload 暴露的 remote API 交互
 
-const serverUrlInput = document.getElementById('serverUrl');
+const relayUrlInput = document.getElementById('relayUrl');
+const refreshHostsBtn = document.getElementById('refreshHostsBtn');
+const hostsList = document.getElementById('hostsList');
 const connectBtn = document.getElementById('connectBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const statusBadge = document.getElementById('statusBadge');
@@ -26,6 +28,8 @@ let screenHeight = 0; // 远程屏幕高度
 let frameScale = 1; // 画面缩放比例
 let frameOffsetX = 0; // 画面在 canvas 上的 X 偏移
 let frameOffsetY = 0; // 画面在 canvas 上的 Y 偏移
+let selectedHostId = null; // 选中的主机 ID
+let relayBaseUrl = ''; // 中继服务器基础 URL
 
 const ctx = desktopCanvas.getContext('2d');
 
@@ -174,15 +178,84 @@ function handleKeyEvent(type, event) {
   });
 }
 
+// 获取在线主机列表
+async function refreshHostsList() {
+  const relayUrl = relayUrlInput.value.trim();
+  if (!relayUrl) {
+    appendLog('请先输入中继服务器地址');
+    return;
+  }
+
+  try {
+    // 转换为 API URL（http://...）
+    const apiUrl = relayUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://') + '/api/hosts';
+    const response = await fetch(apiUrl);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    
+    relayBaseUrl = relayUrl;
+    displayHostsList(data.hosts || []);
+    appendLog(`找到 ${data.hosts.length} 台在线主机`);
+  } catch (e) {
+    appendLog(`获取主机列表失败：${e.message || e}`);
+    hostsList.innerHTML = '<div class="hosts-placeholder">获取失败，请检查服务器地址</div>';
+  }
+}
+
+// 显示主机列表
+function displayHostsList(hosts) {
+  if (hosts.length === 0) {
+    hostsList.innerHTML = '<div class="hosts-placeholder">暂无在线主机</div>';
+    connectBtn.disabled = true;
+    return;
+  }
+
+  hostsList.innerHTML = '';
+  hosts.forEach(host => {
+    const item = document.createElement('div');
+    item.className = 'host-item';
+    if (selectedHostId === host.id) {
+      item.classList.add('selected');
+    }
+    item.innerHTML = `
+      <div class="host-item-name">${host.name || 'Unknown'}</div>
+      <div class="host-item-id">ID: ${host.id}</div>
+    `;
+    item.addEventListener('click', () => {
+      // 取消之前选中的
+      hostsList.querySelectorAll('.host-item').forEach(el => el.classList.remove('selected'));
+      item.classList.add('selected');
+      selectedHostId = host.id;
+      connectBtn.disabled = false;
+      appendLog(`已选择主机：${host.name} (${host.id})`);
+    });
+    hostsList.appendChild(item);
+  });
+}
+
 function setupEventBindings() {
+  refreshHostsBtn.addEventListener('click', refreshHostsList);
+
   connectBtn.addEventListener('click', async () => {
-    const url = serverUrlInput.value.trim();
-    if (!url) {
-      appendLog('请输入服务器地址');
+    if (!selectedHostId) {
+      appendLog('请先选择要连接的主机');
       return;
     }
+
+    const relayUrl = relayUrlInput.value.trim();
+    if (!relayUrl) {
+      appendLog('请输入中继服务器地址');
+      return;
+    }
+
+    // 构建 WebSocket URL，包含 hostId 参数
+    const wsUrl = relayUrl.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://') + '/ws';
+    
     try {
-      await window.remote.connect(url);
+      // 先发送注册消息，指定要连接的 hostId
+      await window.remote.connectWithHostId(wsUrl, selectedHostId);
     } catch (e) {
       appendLog(`连接失败：${e.message || e}`);
       setStatus(false, '连接失败');

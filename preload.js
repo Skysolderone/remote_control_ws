@@ -83,6 +83,100 @@ class RemoteClient {
               }
             } else if (data.type === 'log') {
               this._emit('log', data.message || '');
+            } else if (data.type === 'error') {
+              this._emit('error', new Error(data.message || '未知错误'));
+              this._emit('log', `错误：${data.message || '未知错误'}`);
+            } else if (data.type === 'connected') {
+              this._emit('status', { connected: true, message: '已连接到目标主机' });
+              this._emit('log', data.message || '已连接到目标主机');
+            }
+          } catch (e) {
+            this._emit('log', `收到无法解析的数据：${event.data}`);
+          }
+        };
+      } catch (e) {
+        this._emit('error', e);
+        this._emit('log', `连接异常: ${e.message}`);
+        reject(e);
+      }
+    });
+  }
+
+  // 连接到中继服务器并指定要控制的 host
+  connectWithHostId(url, hostId) {
+    return new Promise((resolve, reject) => {
+      if (this._ws) {
+        this._ws.close();
+        this._ws = null;
+      }
+
+      try {
+        this._emit('status', { connected: false, message: '正在连接...' });
+        this._emit('log', `尝试连接到中继服务器 ${url}`);
+
+        const ws = new WebSocket(url);
+        this._ws = ws;
+
+        ws.onopen = () => {
+          // 发送注册消息，指定要连接的 hostId
+          const registerMsg = {
+            type: 'register',
+            role: 'client',
+            hostId: hostId,
+          };
+          ws.send(JSON.stringify(registerMsg));
+          this._emit('log', '已发送注册消息，等待服务器响应...');
+        };
+
+        ws.onclose = () => {
+          this._emit('status', { connected: false, message: '连接已关闭' });
+          this._emit('log', '连接关闭');
+          this._ws = null;
+        };
+
+        ws.onerror = (err) => {
+          this._emit('error', err);
+          this._emit('log', '连接错误');
+          reject(err);
+        };
+
+        let registered = false;
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            // 处理注册响应
+            if (!registered) {
+              if (data.type === 'connected') {
+                registered = true;
+                this._emit('status', { connected: true, message: '已连接到目标主机' });
+                this._emit('log', data.message || '已连接到目标主机');
+                resolve();
+              } else if (data.type === 'error') {
+                this._emit('error', new Error(data.message || '连接失败'));
+                this._emit('log', `连接失败：${data.message}`);
+                reject(new Error(data.message || '连接失败'));
+                ws.close();
+              }
+              return;
+            }
+
+            // 处理正常消息
+            if (data.type === 'frame') {
+              this._emit('frame', data.image);
+              if (data.cursor) {
+                this._emit('cursor', data.cursor);
+              }
+            } else if (data.type === 'clipboard') {
+              if (typeof data.text === 'string') {
+                this._emit('log', '收到远程剪贴板内容');
+                this._emit('clipboard', data.text);
+              }
+            } else if (data.type === 'log') {
+              this._emit('log', data.message || '');
+            } else if (data.type === 'error') {
+              this._emit('error', new Error(data.message || '未知错误'));
+              this._emit('log', `错误：${data.message || '未知错误'}`);
             }
           } catch (e) {
             this._emit('log', `收到无法解析的数据：${event.data}`);
@@ -164,6 +258,7 @@ const client = new RemoteClient();
 
 contextBridge.exposeInMainWorld('remote', {
   connect: (url) => client.connect(url),
+  connectWithHostId: (url, hostId) => client.connectWithHostId(url, hostId),
   disconnect: () => client.disconnect(),
   sendInput: (payload) => client.sendInput(payload),
   sendClipboard: (payload) => client.sendClipboard(payload),

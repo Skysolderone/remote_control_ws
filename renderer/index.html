@@ -19,18 +19,32 @@
         </div>
 
         <section class="card">
-          <h2 class="card-title">连接设置</h2>
+          <h2 class="card-title">中继服务器</h2>
           <label class="field">
             <span class="field-label">服务器地址</span>
             <input
-              id="serverUrl"
+              id="relayUrl"
               class="input"
               type="text"
-              placeholder="ws://127.0.0.1:9000"
+              placeholder="http://192.168.1.100:9000"
             />
           </label>
           <div class="button-group">
-            <button id="connectBtn" class="btn primary">连接</button>
+            <button id="refreshHostsBtn" class="btn ghost">刷新主机列表</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 class="card-title">在线主机</h2>
+          <div id="hostsList" class="hosts-list">
+            <div class="hosts-placeholder">点击"刷新主机列表"获取在线主机</div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 class="card-title">连接状态</h2>
+          <div class="button-group">
+            <button id="connectBtn" class="btn primary" disabled>连接选中主机</button>
             <button id="disconnectBtn" class="btn ghost" disabled>断开</button>
           </div>
           <div class="status-badge" id="statusBadge">
