@@ -1,0 +1,11 @@
+{
+  "name": "remote_control_electron",
+  "main": "main.js",
+  "packageManager": "yarn@4.10.3",
+  "devDependencies": {
+    "electron": "^39.2.7"
+  },
+  "scripts": {
+    "start": "electron ."
+  }
+}

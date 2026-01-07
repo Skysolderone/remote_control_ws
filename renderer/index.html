@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>远程桌面客户端</title>
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-icon">RC</div>
+          <div class="brand-text">
+            <div class="brand-title">Remote Client</div>
+            <div class="brand-subtitle">远程桌面控制</div>
+          </div>
+        </div>
+
+        <section class="card">
+          <h2 class="card-title">连接设置</h2>
+          <label class="field">
+            <span class="field-label">服务器地址</span>
+            <input
+              id="serverUrl"
+              class="input"
+              type="text"
+              placeholder="ws://127.0.0.1:9000"
+            />
+          </label>
+          <div class="button-group">
+            <button id="connectBtn" class="btn primary">连接</button>
+            <button id="disconnectBtn" class="btn ghost" disabled>断开</button>
+          </div>
+          <div class="status-badge" id="statusBadge">
+            <span class="dot offline"></span>
+            <span class="status-text">未连接</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 class="card-title">会话信息</h2>
+          <div class="info-row">
+            <span class="info-label">分辨率</span>
+            <span class="info-value" id="resolutionLabel">未知</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">输入状态</span>
+            <span class="info-value" id="inputLabel">本地禁用</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2 class="card-title">工具</h2>
+          <div class="button-group column">
+            <button id="clipboardSyncBtn" class="btn ghost">
+              同步本地剪贴板到远程
+            </button>
+            <button id="saveScreenshotBtn" class="btn ghost">
+              保存当前远程截屏
+            </button>
+            <button id="sendFileBtn" class="btn ghost">
+              发送本地文件到远程
+            </button>
+            <input
+              type="file"
+              id="fileInput"
+              style="display: none"
+            />
+          </div>
+        </section>
+      </aside>
+
+      <main class="main-panel">
+        <header class="main-header">
+          <div>
+            <h1 class="page-title">远程桌面</h1>
+            <p class="page-subtitle">
+              当前版本仅实现客户端 UI 和协议骨架，服务端可按需要实现。
+            </p>
+          </div>
+          <div class="header-actions">
+            <label class="switch">
+              <input type="checkbox" id="inputToggle" />
+              <span class="slider"></span>
+              <span class="switch-label">允许键鼠控制</span>
+            </label>
+          </div>
+        </header>
+
+        <section class="desktop-wrapper">
+          <div class="desktop-container" id="desktopContainer">
+            <canvas id="desktopCanvas"></canvas>
+            <div class="desktop-placeholder" id="desktopPlaceholder">
+              <div class="placeholder-icon">🖥️</div>
+              <div class="placeholder-title">等待远程画面</div>
+              <div class="placeholder-subtitle">
+                连接服务端后，这里将显示远程桌面画面。
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="log-panel">
+          <div class="log-header">
+            <span class="log-title">事件日志</span>
+            <button class="btn ghost sm" id="clearLogBtn">清空</button>
+          </div>
+          <div class="log-content" id="logContainer"></div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+  </html>
+
