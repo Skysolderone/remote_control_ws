@@ -37,9 +37,9 @@ type Message struct {
 }
 
 type CursorInfo struct {
-	X       int  `json:"x"`
-	Y       int  `json:"y"`
-	Visible bool `json:"visible"`
+	X       float64 `json:"x"` // 归一化坐标 0~1
+	Y       float64 `json:"y"`
+	Visible bool    `json:"visible"`
 }
 
 type ClipboardPayload struct {
@@ -354,6 +354,19 @@ func handleInput(payload json.RawMessage) {
 	default:
 		log.Println("未知 input 类型:", p.Type)
 	}
+
+	// 为了降低“操作到画面更新”的主观延迟，在每次输入后立即抓取并推送一帧
+	go func() {
+		frameData, err := captureScreen()
+		if err != nil {
+			log.Printf("即时截图失败: %v", err)
+			return
+		}
+		// 使用当前屏幕分辨率获取鼠标位置
+		bounds := screenshot.GetDisplayBounds(0)
+		cursor := getCursorPosition(bounds.Dx(), bounds.Dy())
+		sendFrame(frameData, cursor)
+	}()
 }
 
 // 处理 ping：原样回显 clientTs，用于测量 RTT
@@ -609,9 +622,23 @@ func getCursorPosition(screenWidth, screenHeight int) *CursorInfo {
 
 	visible := pt.X >= 0 && pt.X < int32(screenWidth) && pt.Y >= 0 && pt.Y < int32(screenHeight)
 
+	// 归一化到 0~1，避免与缩放后分辨率不一致
+	nx := float64(pt.X) / float64(screenWidth)
+	ny := float64(pt.Y) / float64(screenHeight)
+	if nx < 0 {
+		nx = 0
+	} else if nx > 1 {
+		nx = 1
+	}
+	if ny < 0 {
+		ny = 0
+	} else if ny > 1 {
+		ny = 1
+	}
+
 	return &CursorInfo{
-		X:       int(pt.X),
-		Y:       int(pt.Y),
+		X:       nx,
+		Y:       ny,
 		Visible: visible,
 	}
 }

@@ -150,9 +150,11 @@ function drawFrame(dataUrl) {
 function drawRemoteCursor() {
   if (!remoteCursor || !remoteCursor.visible) return;
 
-  // 将远程屏幕坐标转换为 canvas 坐标
-  const canvasX = frameOffsetX + remoteCursor.x * frameScale;
-  const canvasY = frameOffsetY + remoteCursor.y * frameScale;
+  // 将归一化坐标转换为图像坐标再映射到 canvas
+  const imgX = (remoteCursor.x || 0) * screenWidth;
+  const imgY = (remoteCursor.y || 0) * screenHeight;
+  const canvasX = frameOffsetX + imgX * frameScale;
+  const canvasY = frameOffsetY + imgY * frameScale;
 
   // 绘制鼠标图标（简单的箭头形状）
   ctx.save();
