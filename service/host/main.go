@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"image/png"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,23 +47,40 @@ type FilePayload struct {
 }
 
 var (
-	relayURL  = "ws://localhost:9000/ws" // 中继服务器地址
-	hostName  = "Windows-PC"              // 机器名称，可通过环境变量或参数设置
+	relayURL  = "wss://wws741.top/remote/ws" // 中继服务器地址（通过 Caddy 代理）
+	hostName  = ""                            // 机器名称，自动获取 IP 地址
 	conn      *websocket.Conn
 	connMutex sync.Mutex
 )
+
+// getLocalIP 获取本机 IP 地址
+func getLocalIP() string {
+	conn, err := net.Dial("udp", "8.8.8.8:80")
+	if err != nil {
+		log.Printf("获取本机 IP 失败: %v，使用 localhost", err)
+		return "127.0.0.1"
+	}
+	defer conn.Close()
+
+	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	return localAddr.IP.String()
+}
 
 func main() {
 	// 从环境变量或命令行参数读取配置
 	if url := os.Getenv("RELAY_URL"); url != "" {
 		relayURL = url
 	}
+
+	// 如果没有通过环境变量设置名称，则使用 IP 地址
 	if name := os.Getenv("HOST_NAME"); name != "" {
 		hostName = name
+	} else {
+		hostName = getLocalIP()
 	}
 
 	log.Printf("被控制端启动，连接到中继服务器: %s", relayURL)
-	log.Printf("机器名称: %s", hostName)
+	log.Printf("机器标识: %s", hostName)
 
 	// 连接到中继服务器
 	for {
@@ -78,8 +97,32 @@ func main() {
 }
 
 func connectToRelay() error {
+	// 如果域名解析失败，尝试使用 IP 地址
+	url := relayURL
+	if strings.Contains(relayURL, "wws741.top") {
+		// 尝试解析域名
+		addrs, err := net.LookupHost("wws741.top")
+		if err != nil {
+			log.Printf("DNS 解析失败，尝试使用 IP 地址: %v", err)
+			// 使用 IP 地址（需要 Caddy 支持 IP 访问）
+			url = strings.Replace(relayURL, "wws741.top", "8.218.201.224", 1)
+			log.Printf("使用 IP 地址连接: %s", url)
+		} else {
+			log.Printf("DNS 解析成功: %v", addrs)
+		}
+	}
+
 	dialer := websocket.Dialer{}
-	c, _, err := dialer.Dial(relayURL, nil)
+	
+	// 如果使用 IP 地址连接 wss，需要跳过证书验证（仅用于测试）
+	if strings.HasPrefix(url, "wss://") && strings.Contains(url, "8.218.201.224") {
+		log.Printf("警告: 使用 IP 地址连接 wss，跳过证书验证")
+		dialer.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true, // 跳过证书验证
+		}
+	}
+	
+	c, _, err := dialer.Dial(url, nil)
 	if err != nil {
 		return fmt.Errorf("连接中继服务器失败: %w", err)
 	}

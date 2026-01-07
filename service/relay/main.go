@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -346,18 +348,12 @@ func (s *RelayServer) handleListHosts(w http.ResponseWriter, r *http.Request) {
 }
 
 func generateID() string {
-	return time.Now().Format("20060102150405") + "-" + randomString(6)
-}
-
-func randomString(n int) string {
-	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, n)
-	seed := time.Now().UnixNano()
-	for i := range b {
-		b[i] = letters[seed%int64(len(letters))]
-		seed = seed*1103515245 + 12345 // 简单线性同余生成器
+	buf := make([]byte, 6)
+	if _, err := rand.Read(buf); err != nil {
+		// 退化到时间戳，避免 panic
+		return time.Now().Format("20060102150405") + "-fallback"
 	}
-	return string(b)
+	return time.Now().Format("20060102150405") + "-" + hex.EncodeToString(buf)
 }
 
 func main() {

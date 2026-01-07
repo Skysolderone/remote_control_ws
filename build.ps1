@@ -23,14 +23,14 @@ function Build-Relay {
 }
 
 function Build-Host {
-    Write-Host "Building Host Agent (Linux)..." -ForegroundColor Cyan
+    Write-Host "Building Host Agent..." -ForegroundColor Cyan
     Push-Location service/host
     try {
-        $env:GOOS = "linux"
-        $env:GOARCH = "amd64"
-        go build -o ../../bin/host.linux main.go
+        # $env:GOOS = "linux"
+        # $env:GOARCH = "amd64"
+        go build -o ../../bin/host.exe main.go
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Host build completed: bin/host.linux" -ForegroundColor Green
+            Write-Host "Host build completed: bin/host" -ForegroundColor Green
         }
     } finally {
         Pop-Location
@@ -38,18 +38,18 @@ function Build-Host {
 }
 
 function Build-Client {
-    Write-Host "Building Client (Linux)..." -ForegroundColor Cyan
+    Write-Host "Building Client..." -ForegroundColor Cyan
     if (-not (Test-Path "service/client")) {
         Write-Host "Warning: service/client directory not found, skipping" -ForegroundColor Yellow
         return
     }
     Push-Location service/client
     try {
-        $env:GOOS = "linux"
-        $env:GOARCH = "amd64"
-        go build -o ../../bin/client.linux main.go
+        # $env:GOOS = "linux"
+        # $env:GOARCH = "amd64"
+        go build -o ../../bin/client main.go
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Client build completed: bin/client.linux" -ForegroundColor Green
+            Write-Host "Client build completed: bin/client" -ForegroundColor Green
         }
     } finally {
         Pop-Location

@@ -4,11 +4,11 @@ build-relay:
 
 build-host:
 	cd service/host
-	GOOS=linux GOARCH=amd64 go build -o bin/host.linux main.go
+	go build -o bin/host main.go
 
 build-client:
 	cd service/client
-	GOOS=linux GOARCH=amd64 go build -o bin/client.linux main.go
+	 go build -o bin/client main.go
 
 build-all: build-relay build-host build-client
 
