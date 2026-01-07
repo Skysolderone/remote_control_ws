@@ -308,31 +308,19 @@ func (s *RelayServer) writePump(conn *Connection) {
 		case message, ok := <-conn.Send:
 			conn.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if !ok {
-				conn.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				// 通道关闭，关闭连接
+				_ = conn.Conn.WriteMessage(websocket.CloseMessage, []byte{})
 				return
 			}
 
-			w, err := conn.Conn.NextWriter(websocket.TextMessage)
-			if err != nil {
-				return
-			}
-			w.Write(message)
-
-			// 批量发送其他待发送消息
-			n := len(conn.Send)
-			for i := 0; i < n; i++ {
-				w.Write([]byte{'\n'})
-				w.Write(<-conn.Send)
-			}
-
-			if err := w.Close(); err != nil {
+			// 每条消息使用单独的 WebSocket 帧发送，避免接收端出现多个 JSON 粘在一起
+			if err := conn.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
 				return
 			}
 		case <-ticker.C:
 			conn.Conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-			if err := conn.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
+			// 周期性发送 ping，保持连接
+			_ = conn.Conn.WriteMessage(websocket.PingMessage, nil)
 		}
 	}
 }
