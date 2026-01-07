@@ -1,6 +1,7 @@
 // 渲染进程脚本：负责 UI 和与 preload 暴露的 remote API 交互
 
-const relayUrlInput = document.getElementById('relayUrl');
+const RELAY_BASE_URL = 'https://wws741.top/remote';
+// const relayUrlInput = document.getElementById('relayUrl'); // 已隐藏
 const refreshHostsBtn = document.getElementById('refreshHostsBtn');
 const hostsList = document.getElementById('hostsList');
 const connectBtn = document.getElementById('connectBtn');
@@ -29,7 +30,7 @@ let frameScale = 1; // 画面缩放比例
 let frameOffsetX = 0; // 画面在 canvas 上的 X 偏移
 let frameOffsetY = 0; // 画面在 canvas 上的 Y 偏移
 let selectedHostId = null; // 选中的主机 ID
-let relayBaseUrl = ''; // 中继服务器基础 URL
+let relayBaseUrl = RELAY_BASE_URL; // 中继服务器基础 URL（写死）
 
 const ctx = desktopCanvas.getContext('2d');
 
@@ -180,12 +181,7 @@ function handleKeyEvent(type, event) {
 
 // 获取在线主机列表
 async function refreshHostsList() {
-  const relayUrl = relayUrlInput.value.trim();
-  if (!relayUrl) {
-    appendLog('请先输入中继服务器地址');
-    return;
-  }
-
+  const relayUrl = RELAY_BASE_URL;
   try {
     // 转换为 API URL（http://...）
     const apiUrl = relayUrl.replace(/^ws:\/\//, 'http://').replace(/^wss:\/\//, 'https://') + '/api/hosts';
@@ -244,14 +240,8 @@ function setupEventBindings() {
       return;
     }
 
-    const relayUrl = relayUrlInput.value.trim();
-    if (!relayUrl) {
-      appendLog('请输入中继服务器地址');
-      return;
-    }
-
     // 构建 WebSocket URL，包含 hostId 参数
-    const wsUrl = relayUrl.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://') + '/ws';
+    const wsUrl = RELAY_BASE_URL.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://') + '/ws';
     
     try {
       // 先发送注册消息，指定要连接的 hostId
@@ -429,7 +419,11 @@ function setupEventBindings() {
 window.addEventListener('DOMContentLoaded', () => {
   resizeCanvasToContainer();
   inputLabel.textContent = '本地禁用';
+  
+  // 默认使用写死的中继地址
+  relayBaseUrl = RELAY_BASE_URL;
+  
   setupEventBindings();
-  appendLog('客户端已就绪，请先配置服务器地址并点击连接');
+  appendLog('客户端已就绪，请先刷新主机列表并选择要连接的主机');
 });
 

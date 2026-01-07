@@ -472,6 +472,10 @@ body {
   color: #9ca3af;
 }
 
+.hidden {
+  display: none !important;
+}
+
 @media (max-width: 900px) {
   .app-shell {
     grid-template-columns: 240px minmax(0, 1fr);

@@ -1,3 +1,6 @@
+//go:build windows
+// +build windows
+
 package main
 
 import (
@@ -14,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/atotto/clipboard"
 	"github.com/gorilla/websocket"
@@ -46,9 +51,25 @@ type FilePayload struct {
 	DataURL string `json:"dataUrl"`
 }
 
+// 输入事件负载
+type InputPayload struct {
+	Type     string  `json:"type"`  // mouse | keyboard
+	Event    string  `json:"event"` // move|down|up|wheel|down/up(键盘)
+	X        float64 `json:"x"`     // 相对坐标 0~1
+	Y        float64 `json:"y"`
+	Button   int     `json:"button"` // 0:左 1:中 2:右
+	DeltaY   float64 `json:"deltaY"` // 滚轮
+	Key      string  `json:"key"`    // 键值
+	Code     string  `json:"code"`   // 物理键位（优先使用）
+	AltKey   bool    `json:"altKey"`
+	CtrlKey  bool    `json:"ctrlKey"`
+	ShiftKey bool    `json:"shiftKey"`
+	MetaKey  bool    `json:"metaKey"`
+}
+
 var (
 	relayURL  = "wss://wws741.top/remote/ws" // 中继服务器地址（通过 Caddy 代理）
-	hostName  = ""                            // 机器名称，自动获取 IP 地址
+	hostName  = ""                           // 机器名称，自动获取 IP 地址
 	conn      *websocket.Conn
 	connMutex sync.Mutex
 )
@@ -113,7 +134,7 @@ func connectToRelay() error {
 	}
 
 	dialer := websocket.Dialer{}
-	
+
 	// 如果使用 IP 地址连接 wss，需要跳过证书验证（仅用于测试）
 	if strings.HasPrefix(url, "wss://") && strings.Contains(url, "8.218.201.224") {
 		log.Printf("警告: 使用 IP 地址连接 wss，跳过证书验证")
@@ -121,7 +142,7 @@ func connectToRelay() error {
 			InsecureSkipVerify: true, // 跳过证书验证
 		}
 	}
-	
+
 	c, _, err := dialer.Dial(url, nil)
 	if err != nil {
 		return fmt.Errorf("连接中继服务器失败: %w", err)
@@ -290,8 +311,199 @@ func handleFile(payload json.RawMessage) {
 }
 
 func handleInput(payload json.RawMessage) {
-	log.Println("收到 input 事件:", string(payload))
-	// TODO: 实现真实的鼠标键盘控制
+	var p InputPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Println("解析 input payload 失败:", err)
+		return
+	}
+
+	switch p.Type {
+	case "mouse":
+		handleMouseInput(p)
+	case "keyboard":
+		handleKeyboardInput(p)
+	default:
+		log.Println("未知 input 类型:", p.Type)
+	}
+}
+
+// 处理鼠标事件
+func handleMouseInput(p InputPayload) {
+	screenW := win.GetSystemMetrics(win.SM_CXSCREEN)
+	screenH := win.GetSystemMetrics(win.SM_CYSCREEN)
+	if screenW <= 0 || screenH <= 0 {
+		log.Println("获取屏幕分辨率失败")
+		return
+	}
+
+	x := int(float64(screenW-1) * p.X)
+	y := int(float64(screenH-1) * p.Y)
+
+	// 移动到指定位置
+	win.SetCursorPos(int32(x), int32(y))
+
+	switch p.Event {
+	case "move":
+		return
+	case "down":
+		mouseButtonEvent(p.Button, true)
+	case "up":
+		mouseButtonEvent(p.Button, false)
+	case "wheel":
+		mouseWheelEvent(p.DeltaY)
+	default:
+		log.Println("未知鼠标事件:", p.Event)
+	}
+}
+
+func mouseButtonEvent(btn int, down bool) {
+	var flag uint32
+	switch btn {
+	case 0: // 左键
+		if down {
+			flag = win.MOUSEEVENTF_LEFTDOWN
+		} else {
+			flag = win.MOUSEEVENTF_LEFTUP
+		}
+	case 1: // 中键
+		if down {
+			flag = win.MOUSEEVENTF_MIDDLEDOWN
+		} else {
+			flag = win.MOUSEEVENTF_MIDDLEUP
+		}
+	case 2: // 右键
+		if down {
+			flag = win.MOUSEEVENTF_RIGHTDOWN
+		} else {
+			flag = win.MOUSEEVENTF_RIGHTUP
+		}
+	default:
+		// 默认左键
+		if down {
+			flag = win.MOUSEEVENTF_LEFTDOWN
+		} else {
+			flag = win.MOUSEEVENTF_LEFTUP
+		}
+	}
+	sendMouseInput(flag, 0)
+}
+
+func mouseWheelEvent(deltaY float64) {
+	if deltaY == 0 {
+		return
+	}
+	// 浏览器的 deltaY 向下为正，这里取反符合 Windows 习惯
+	wheel := int32(-120)
+	if deltaY < 0 {
+		wheel = 120
+	}
+	sendMouseInput(win.MOUSEEVENTF_WHEEL, wheel)
+}
+
+// 处理键盘事件
+func handleKeyboardInput(p InputPayload) {
+	vk := mapCodeToVK(p.Code, p.Key)
+	if vk == 0 {
+		log.Printf("未映射的键: code=%s key=%s", p.Code, p.Key)
+		return
+	}
+
+	sendKeyboardInput(vk, p.Event == "up")
+}
+
+func mapCodeToVK(code, key string) uint16 {
+	code = strings.TrimSpace(code)
+	key = strings.TrimSpace(key)
+
+	// 优先按 code 识别
+	if strings.HasPrefix(code, "Key") && len(code) == 4 {
+		ch := code[3]
+		if ch >= 'A' && ch <= 'Z' {
+			return uint16(ch) // VK_A ~ VK_Z
+		}
+	}
+	if strings.HasPrefix(code, "Digit") && len(code) == 6 {
+		ch := code[5]
+		if ch >= '0' && ch <= '9' {
+			return uint16(ch) // VK_0 ~ VK_9
+		}
+	}
+
+	switch code {
+	case "Space":
+		return win.VK_SPACE
+	case "Enter":
+		return win.VK_RETURN
+	case "Tab":
+		return win.VK_TAB
+	case "Backspace":
+		return win.VK_BACK
+	case "Escape":
+		return win.VK_ESCAPE
+	case "ArrowUp":
+		return win.VK_UP
+	case "ArrowDown":
+		return win.VK_DOWN
+	case "ArrowLeft":
+		return win.VK_LEFT
+	case "ArrowRight":
+		return win.VK_RIGHT
+	case "ShiftLeft", "ShiftRight":
+		return win.VK_SHIFT
+	case "ControlLeft", "ControlRight":
+		return win.VK_CONTROL
+	case "AltLeft", "AltRight":
+		return win.VK_MENU
+	}
+
+	// 退化到 key，适配一些常见值
+	switch strings.ToLower(key) {
+	case " ", "space":
+		return win.VK_SPACE
+	case "enter":
+		return win.VK_RETURN
+	case "tab":
+		return win.VK_TAB
+	case "backspace":
+		return win.VK_BACK
+	case "escape", "esc":
+		return win.VK_ESCAPE
+	case "arrowup", "up":
+		return win.VK_UP
+	case "arrowdown", "down":
+		return win.VK_DOWN
+	case "arrowleft", "left":
+		return win.VK_LEFT
+	case "arrowright", "right":
+		return win.VK_RIGHT
+	case "shift":
+		return win.VK_SHIFT
+	case "control", "ctrl":
+		return win.VK_CONTROL
+	case "alt":
+		return win.VK_MENU
+	}
+
+	// 未识别返回 0
+	return 0
+}
+
+// 发送鼠标输入（使用 mouse_event）
+func sendMouseInput(flags uint32, data int32) {
+	user32 := windows.NewLazySystemDLL("user32.dll")
+	mouseEvent := user32.NewProc("mouse_event")
+	mouseEvent.Call(uintptr(flags), 0, 0, uintptr(uint32(data)), 0)
+}
+
+// 发送键盘输入（使用 keybd_event）
+func sendKeyboardInput(vk uint16, keyUp bool) {
+	user32 := windows.NewLazySystemDLL("user32.dll")
+	keybdEvent := user32.NewProc("keybd_event")
+	flags := uint32(0)
+	if keyUp {
+		flags = win.KEYEVENTF_KEYUP
+	}
+	keybdEvent.Call(uintptr(vk), 0, uintptr(flags), 0)
 }
 
 func sanitizeFilename(name string) string {
