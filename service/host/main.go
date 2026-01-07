@@ -9,7 +9,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"image/png"
+	"image"
+	"image/jpeg"
 	"log"
 	"net"
 	"os"
@@ -24,6 +25,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/kbinani/screenshot"
 	"github.com/lxn/win"
+	"golang.org/x/image/draw"
 )
 
 type Message struct {
@@ -67,11 +69,19 @@ type InputPayload struct {
 	MetaKey  bool    `json:"metaKey"`
 }
 
+// Ping 负载
+type PingPayload struct {
+	ClientTs int64 `json:"clientTs"`
+}
+
 var (
 	relayURL  = "wss://wws741.top/remote/ws" // 中继服务器地址（通过 Caddy 代理）
 	hostName  = ""                           // 机器名称，自动获取 IP 地址
 	conn      *websocket.Conn
 	connMutex sync.Mutex
+	// 最近一次输入事件时间，用于动态调整帧率
+	lastInputTime time.Time
+	lastInputMu   sync.Mutex
 )
 
 // getLocalIP 获取本机 IP 地址
@@ -180,9 +190,6 @@ func connectToRelay() error {
 }
 
 func startScreenCapture() {
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-
 	bounds := screenshot.GetDisplayBounds(0)
 	screenWidth := bounds.Dx()
 	screenHeight := bounds.Dy()
@@ -193,7 +200,19 @@ func startScreenCapture() {
 		sendFrame(frameData, cursor)
 	}
 
-	for range ticker.C {
+	for {
+		// 根据最近输入时间动态调整间隔：
+		// 有操作时更高帧率（200ms），无操作时降到 800ms
+		interval := 800 * time.Millisecond
+		lastInputMu.Lock()
+		last := lastInputTime
+		lastInputMu.Unlock()
+		if !last.IsZero() && time.Since(last) < 3*time.Second {
+			interval = 200 * time.Millisecond
+		}
+
+		time.Sleep(interval)
+
 		frameData, err := captureScreen()
 		if err != nil {
 			log.Printf("抓取屏幕失败: %v\n", err)
@@ -257,6 +276,8 @@ func handleMessages() {
 			handleFile(msg.Payload)
 		case "input":
 			handleInput(msg.Payload)
+		case "ping":
+			handlePing(c, msg.Payload)
 		default:
 			log.Printf("未知消息类型: %s", msg.Type)
 		}
@@ -317,6 +338,11 @@ func handleInput(payload json.RawMessage) {
 		return
 	}
 
+	// 更新最近输入时间
+	lastInputMu.Lock()
+	lastInputTime = time.Now()
+	lastInputMu.Unlock()
+
 	log.Printf("收到输入事件: type=%s event=%s x=%.3f y=%.3f button=%d deltaY=%.2f key=%s code=%s",
 		p.Type, p.Event, p.X, p.Y, p.Button, p.DeltaY, p.Key, p.Code)
 
@@ -327,6 +353,22 @@ func handleInput(payload json.RawMessage) {
 		handleKeyboardInput(p)
 	default:
 		log.Println("未知 input 类型:", p.Type)
+	}
+}
+
+// 处理 ping：原样回显 clientTs，用于测量 RTT
+func handlePing(c *websocket.Conn, payload json.RawMessage) {
+	var p PingPayload
+	if err := json.Unmarshal(payload, &p); err != nil {
+		log.Println("解析 ping payload 失败:", err)
+		return
+	}
+	resp := map[string]interface{}{
+		"type":     "pong",
+		"clientTs": p.ClientTs,
+	}
+	if err := c.WriteJSON(resp); err != nil {
+		log.Println("发送 pong 失败:", err)
 	}
 }
 
@@ -525,13 +567,39 @@ func captureScreen() (string, error) {
 		return "", fmt.Errorf("截图失败: %w", err)
 	}
 
+	// 将原始截图按比例缩放到不超过 1280x720，减小单帧数据量
+	srcW := img.Bounds().Dx()
+	srcH := img.Bounds().Dy()
+	targetW := srcW
+	targetH := srcH
+	const maxW = 1280
+	const maxH = 720
+	if srcW > maxW || srcH > maxH {
+		scaleW := float64(maxW) / float64(srcW)
+		scaleH := float64(maxH) / float64(srcH)
+		scale := scaleW
+		if scaleH < scaleW {
+			scale = scaleH
+		}
+		targetW = int(float64(srcW) * scale)
+		targetH = int(float64(srcH) * scale)
+	}
+
+	var scaled image.Image = img
+	if targetW != srcW || targetH != srcH {
+		dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
+		draw.BiLinear.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
+		scaled = dst
+	}
+
 	var buf bytes.Buffer
-	if err := png.Encode(&buf, img); err != nil {
-		return "", fmt.Errorf("PNG 编码失败: %w", err)
+	// 使用 JPEG 压缩，减小单帧体积
+	if err := jpeg.Encode(&buf, scaled, &jpeg.Options{Quality: 70}); err != nil {
+		return "", fmt.Errorf("JPEG 编码失败: %w", err)
 	}
 
 	b64 := base64.StdEncoding.EncodeToString(buf.Bytes())
-	dataURL := fmt.Sprintf("data:image/png;base64,%s", b64)
+	dataURL := fmt.Sprintf("data:image/jpeg;base64,%s", b64)
 	return dataURL, nil
 }
 

@@ -356,6 +356,11 @@ body {
   padding: 12px;
 }
 
+.desktop-container.control-active,
+.desktop-container.control-active #desktopCanvas {
+  cursor: none;
+}
+
 #desktopCanvas {
   width: 100%;
   height: 100%;

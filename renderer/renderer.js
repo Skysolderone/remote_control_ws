@@ -9,6 +9,7 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const statusBadge = document.getElementById('statusBadge');
 const resolutionLabel = document.getElementById('resolutionLabel');
 const inputLabel = document.getElementById('inputLabel');
+const latencyLabel = document.getElementById('latencyLabel');
 const inputToggle = document.getElementById('inputToggle');
 const desktopCanvas = document.getElementById('desktopCanvas');
 const desktopContainer = document.getElementById('desktopContainer');
@@ -31,6 +32,12 @@ let frameOffsetX = 0; // 画面在 canvas 上的 X 偏移
 let frameOffsetY = 0; // 画面在 canvas 上的 Y 偏移
 let selectedHostId = null; // 选中的主机 ID
 let relayBaseUrl = RELAY_BASE_URL; // 中继服务器基础 URL（写死）
+let autoReconnect = true; // 是否自动重连
+let lastWsUrl = null;
+let lastHostId = null;
+let reconnectTimer = null;
+let latencyTimer = null;
+let lastPingTs = null;
 
 const ctx = desktopCanvas.getContext('2d');
 
@@ -60,6 +67,37 @@ function setStatus(connected, text) {
 
   connectBtn.disabled = connected;
   disconnectBtn.disabled = !connected;
+
+  // 管理延迟检测定时器
+  if (connected) {
+    if (!latencyTimer) {
+      latencyTimer = setInterval(() => {
+        if (!isConnected) return;
+        lastPingTs = Date.now();
+        window.remote.sendPing();
+      }, 5000);
+    }
+  } else {
+    if (latencyTimer) {
+      clearInterval(latencyTimer);
+      latencyTimer = null;
+    }
+    lastPingTs = null;
+    if (latencyLabel) {
+      latencyLabel.textContent = '--';
+    }
+  }
+
+  updateControlCursor();
+}
+
+function updateControlCursor() {
+  if (!desktopContainer) return;
+  if (isConnected && inputEnabled) {
+    desktopContainer.classList.add('control-active');
+  } else {
+    desktopContainer.classList.remove('control-active');
+  }
 }
 
 function resizeCanvasToContainer() {
@@ -190,7 +228,7 @@ async function refreshHostsList() {
       throw new Error(`HTTP ${response.status}`);
     }
     const data = await response.json();
-    
+
     relayBaseUrl = relayUrl;
     displayHostsList(data.hosts || []);
     appendLog(`找到 ${data.hosts.length} 台在线主机`);
@@ -242,10 +280,14 @@ function setupEventBindings() {
 
     // 构建 WebSocket URL，包含 hostId 参数
     const wsUrl = RELAY_BASE_URL.replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://') + '/ws';
-    
+
     try {
       // 先发送注册消息，指定要连接的 hostId
       await window.remote.connectWithHostId(wsUrl, selectedHostId);
+      // 记录最近一次成功连接的目标，用于自动重连
+      lastWsUrl = wsUrl;
+      lastHostId = selectedHostId;
+      autoReconnect = true;
     } catch (e) {
       appendLog(`连接失败：${e.message || e}`);
       setStatus(false, '连接失败');
@@ -253,12 +295,19 @@ function setupEventBindings() {
   });
 
   disconnectBtn.addEventListener('click', () => {
+    // 人为断开时关闭自动重连
+    autoReconnect = false;
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     window.remote.disconnect();
   });
 
   inputToggle.addEventListener('change', () => {
     inputEnabled = inputToggle.checked;
     inputLabel.textContent = inputEnabled ? '本地已启用' : '本地禁用';
+    updateControlCursor();
   });
 
   clearLogBtn.addEventListener('click', () => {
@@ -358,6 +407,23 @@ function setupEventBindings() {
   // remote 事件回调
   window.remote.onStatus((payload) => {
     setStatus(Boolean(payload.connected), payload.message);
+
+    // 自动重连逻辑：非人为断开且之前成功连接过
+    if (!payload.connected && autoReconnect && lastWsUrl && lastHostId) {
+      // 避免多次定时器叠加
+      if (reconnectTimer) return;
+      appendLog('连接断开，准备自动重连...');
+      reconnectTimer = setTimeout(async () => {
+        reconnectTimer = null;
+        if (!autoReconnect) return;
+        try {
+          appendLog('尝试自动重连到目标主机...');
+          await window.remote.connectWithHostId(lastWsUrl, lastHostId);
+        } catch (e) {
+          appendLog(`自动重连失败：${e.message || e}`);
+        }
+      }, 2000);
+    }
   });
 
   window.remote.onFrame((image) => {
@@ -414,16 +480,33 @@ function setupEventBindings() {
   window.remote.onError((err) => {
     appendLog(`错误：${err && err.message ? err.message : '未知错误'}`);
   });
+
+  window.remote.onPong((data) => {
+    if (!data || typeof data.clientTs !== 'number') return;
+    const now = Date.now();
+    const rtt = now - data.clientTs;
+    if (latencyLabel) {
+      latencyLabel.textContent = `${rtt} ms`;
+    }
+    appendLog(`当前延迟：${rtt} ms`);
+  });
 }
 
 window.addEventListener('DOMContentLoaded', () => {
   resizeCanvasToContainer();
-  inputLabel.textContent = '本地禁用';
-  
+
+  // 默认开启键鼠控制
+  inputEnabled = true;
+  if (inputToggle) {
+    inputToggle.checked = true;
+  }
+  inputLabel.textContent = '本地已启用';
+
   // 默认使用写死的中继地址
   relayBaseUrl = RELAY_BASE_URL;
-  
+
   setupEventBindings();
-  appendLog('客户端已就绪，请先刷新主机列表并选择要连接的主机');
+  updateControlCursor();
+  appendLog('客户端已就绪，默认开启键鼠控制，请先刷新主机列表并选择要连接的主机');
 });
 

@@ -7,6 +7,7 @@ class RemoteClient {
       status: [],
       frame: [],
       cursor: [],
+      pong: [],
       log: [],
       error: [],
     };
@@ -83,6 +84,8 @@ class RemoteClient {
               }
             } else if (data.type === 'log') {
               this._emit('log', data.message || '');
+            } else if (data.type === 'pong') {
+              this._emit('pong', data);
             } else if (data.type === 'error') {
               this._emit('error', new Error(data.message || '未知错误'));
               this._emit('log', `错误：${data.message || '未知错误'}`);
@@ -252,6 +255,21 @@ class RemoteClient {
       this._emit('log', `发送文件异常: ${e.message}`);
     }
   }
+
+  // 发送 ping，用于测量延迟
+  sendPing() {
+    if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+      this._emit('log', '发送 ping 失败：未连接');
+      return;
+    }
+    try {
+      const payload = { clientTs: Date.now() };
+      this._ws.send(JSON.stringify({ type: 'ping', payload }));
+    } catch (e) {
+      this._emit('error', e);
+      this._emit('log', `发送 ping 异常: ${e.message}`);
+    }
+  }
 }
 
 const client = new RemoteClient();
@@ -263,11 +281,13 @@ contextBridge.exposeInMainWorld('remote', {
   sendInput: (payload) => client.sendInput(payload),
   sendClipboard: (payload) => client.sendClipboard(payload),
   sendFile: (payload) => client.sendFile(payload),
+  sendPing: () => client.sendPing(),
   onStatus: (handler) => client.on('status', handler),
   onFrame: (handler) => client.on('frame', handler),
   onCursor: (handler) => client.on('cursor', handler),
   onLog: (handler) => client.on('log', handler),
   onClipboard: (handler) => client.on('clipboard', handler),
+  onPong: (handler) => client.on('pong', handler),
   onError: (handler) => client.on('error', handler),
   /**
    * 请求主进程保存当前画面为本地图片文件
