@@ -317,6 +317,9 @@ func handleInput(payload json.RawMessage) {
 		return
 	}
 
+	log.Printf("收到输入事件: type=%s event=%s x=%.3f y=%.3f button=%d deltaY=%.2f key=%s code=%s",
+		p.Type, p.Event, p.X, p.Y, p.Button, p.DeltaY, p.Key, p.Code)
+
 	switch p.Type {
 	case "mouse":
 		handleMouseInput(p)
