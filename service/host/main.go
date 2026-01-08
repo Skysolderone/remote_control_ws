@@ -202,13 +202,13 @@ func startScreenCapture() {
 
 	for {
 		// 根据最近输入时间动态调整间隔：
-		// 有操作时更高帧率（200ms），无操作时降到 800ms
-		interval := 800 * time.Millisecond
+		// 有操作时更高帧率（16ms = 60fps），无操作时降到 500ms
+		interval := 500 * time.Millisecond
 		lastInputMu.Lock()
 		last := lastInputTime
 		lastInputMu.Unlock()
-		if !last.IsZero() && time.Since(last) < 3*time.Second {
-			interval = 200 * time.Millisecond
+		if !last.IsZero() && time.Since(last) < 1500*time.Millisecond {
+			interval = 16 * time.Millisecond // 60 FPS
 		}
 
 		time.Sleep(interval)
@@ -585,8 +585,8 @@ func captureScreen() (string, error) {
 	srcH := img.Bounds().Dy()
 	targetW := srcW
 	targetH := srcH
-	const maxW = 1280
-	const maxH = 720
+	const maxW = 800  // 进一步降低分辨率以最小化延迟
+	const maxH = 450
 	if srcW > maxW || srcH > maxH {
 		scaleW := float64(maxW) / float64(srcW)
 		scaleH := float64(maxH) / float64(srcH)
@@ -601,13 +601,14 @@ func captureScreen() (string, error) {
 	var scaled image.Image = img
 	if targetW != srcW || targetH != srcH {
 		dst := image.NewRGBA(image.Rect(0, 0, targetW, targetH))
-		draw.BiLinear.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
+		// 使用最快的缩放算法以降低CPU消耗和延迟
+		draw.NearestNeighbor.Scale(dst, dst.Bounds(), img, img.Bounds(), draw.Over, nil)
 		scaled = dst
 	}
 
 	var buf bytes.Buffer
-	// 使用 JPEG 压缩，减小单帧体积
-	if err := jpeg.Encode(&buf, scaled, &jpeg.Options{Quality: 70}); err != nil {
+	// 使用 JPEG 压缩，减小单帧体积（低质量以最小化延迟）
+	if err := jpeg.Encode(&buf, scaled, &jpeg.Options{Quality: 50}); err != nil {
 		return "", fmt.Errorf("JPEG 编码失败: %w", err)
 	}
 

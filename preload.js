@@ -177,6 +177,8 @@ class RemoteClient {
               }
             } else if (data.type === 'log') {
               this._emit('log', data.message || '');
+            } else if (data.type === 'pong') {
+              this._emit('pong', data);
             } else if (data.type === 'error') {
               this._emit('error', new Error(data.message || '未知错误'));
               this._emit('log', `错误：${data.message || '未知错误'}`);
@@ -259,7 +261,6 @@ class RemoteClient {
   // 发送 ping，用于测量延迟
   sendPing() {
     if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
-      this._emit('log', '发送 ping 失败：未连接');
       return;
     }
     try {
@@ -267,7 +268,6 @@ class RemoteClient {
       this._ws.send(JSON.stringify({ type: 'ping', payload }));
     } catch (e) {
       this._emit('error', e);
-      this._emit('log', `发送 ping 异常: ${e.message}`);
     }
   }
 }

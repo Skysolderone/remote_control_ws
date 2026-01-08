@@ -429,7 +429,6 @@ function setupEventBindings() {
   });
 
   window.remote.onFrame((image) => {
-    appendLog('收到远程画面');
     drawFrame(image);
   });
 
@@ -490,7 +489,6 @@ function setupEventBindings() {
     if (latencyLabel) {
       latencyLabel.textContent = `${rtt} ms`;
     }
-    appendLog(`当前延迟：${rtt} ms`);
   });
 }
 
