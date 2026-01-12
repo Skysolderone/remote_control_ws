@@ -26,11 +26,20 @@ function Build-Host {
     Write-Host "Building Host Agent..." -ForegroundColor Cyan
     Push-Location service/host
     try {
-        # $env:GOOS = "linux"
-        # $env:GOARCH = "amd64"
-        go build -o ../../bin/host.exe main.go
+        # Check if goversioninfo is installed
+        $hasVersionInfo = Get-Command go-winres -ErrorAction SilentlyContinue
+        if ($hasVersionInfo -and (Test-Path "versioninfo.json")) {
+            Write-Host "Adding version info..." -ForegroundColor Yellow
+            go-winres make --in versioninfo.json
+        }
+
+        # Use ldflags to reduce file size
+        $ldflags = "-s -w"
+        go build -ldflags="$ldflags" -o ../../bin/host.exe main.go
+
         if ($LASTEXITCODE -eq 0) {
-            Write-Host "Host build completed: bin/host" -ForegroundColor Green
+            Write-Host "Host build completed: bin/host.exe" -ForegroundColor Green
+            Write-Host "Note: If deleted by antivirus, add to whitelist" -ForegroundColor Yellow
         }
     } finally {
         Pop-Location

@@ -183,16 +183,30 @@ function drawRemoteCursor() {
 
 function getRelativePosition(event) {
   const rect = desktopCanvas.getBoundingClientRect();
-  const x = event.clientX - rect.left;
-  const y = event.clientY - rect.top;
-  const rx = x / rect.width;
-  const ry = y / rect.height;
+  const canvasX = event.clientX - rect.left;
+  const canvasY = event.clientY - rect.top;
+
+  // 计算点击位置相对于实际画面的坐标
+  // 减去画面在canvas上的偏移，然后除以缩放比例
+  const imageX = (canvasX - frameOffsetX) / frameScale;
+  const imageY = (canvasY - frameOffsetY) / frameScale;
+
+  // 归一化到 0-1 范围（相对于远程屏幕）
+  const rx = imageX / screenWidth;
+  const ry = imageY / screenHeight;
+
   return { rx, ry };
 }
 
 function handleMouseEvent(type, event) {
   if (!isConnected || !inputEnabled) return;
   const { rx, ry } = getRelativePosition(event);
+
+  // 忽略点击在画面外（黑边）的事件
+  if (rx < 0 || rx > 1 || ry < 0 || ry > 1) {
+    return;
+  }
+
   window.remote.sendInput({
     type: 'mouse',
     event: type,
